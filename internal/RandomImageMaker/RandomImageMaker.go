@@ -5,8 +5,7 @@ import (
 	"log"
 	"math/rand/v2"
 	"os"
-	"runtime/pprof"
-	"strconv"
+	"sync"
 )
 
 type Color struct {
@@ -23,37 +22,13 @@ func createRandomColor() Color {
 	}
 }
 
-func MakeRandomImage() {
-	profile, err := os.Create("cpu.prof")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer profile.Close()
-
-	if err := pprof.StartCPUProfile(profile); err != nil {
-		log.Fatal(err)
-	}
-	defer pprof.StopCPUProfile()
-	args := os.Args
-
-	var scale int32 = 10
-
-	if len(args) > 1 {
-		value, err := strconv.Atoi(args[1])
-		if err != nil {
-			log.Fatal(err)
-		}
-		scale = int32(value)
-	}
-
-	width := int(10 * scale)
-	height := int(10 * scale)
-
-	fileName := "image.ppm"
+func MakeRandomImage(scale int, workers int, fileName string) {
+	width := 10 * scale
+	height := 10 * scale
 
 	file, err := os.OpenFile(
 		fileName,
-		os.O_CREATE|os.O_WRONLY|os.O_TRUNC,
+		os.O_CREATE|os.O_WRONLY|os.O_TRUNC|os.O_APPEND,
 		0644,
 	)
 	if err != nil {
@@ -68,25 +43,45 @@ func MakeRandomImage() {
 		log.Fatal(err)
 	}
 
-	// Pixel data
-	buffer := make([]byte, 0, width*3)
+	rowsPerWorker := height / workers
+	remainder := height % workers
 
-	for range height {
-		buffer = buffer[:0]
+	var wg sync.WaitGroup
+	wg.Add(workers)
 
-		for range width {
-			color := createRandomColor()
-
-			buffer = append(
-				buffer,
-				color.Red,
-				color.Green,
-				color.Blue,
-			)
+	for worker := 0; worker < workers; worker++ {
+		// Distribute remainder rows among the first workers.
+		rows := rowsPerWorker
+		if worker < remainder {
+			rows++
 		}
 
-		if _, err := file.Write(buffer); err != nil {
-			log.Fatal(err)
-		}
+		go func() {
+			defer wg.Done()
+
+			buffer := make([]byte, 0, width*3)
+
+			for range rows {
+				buffer = buffer[:0]
+
+				for range width {
+					color := createRandomColor()
+
+					buffer = append(
+						buffer,
+						color.Red,
+						color.Green,
+						color.Blue,
+					)
+				}
+
+				if _, err := file.Write(buffer); err != nil {
+					log.Println("write error:", err)
+					return
+				}
+			}
+		}()
 	}
+
+	wg.Wait()
 }
