@@ -5,68 +5,88 @@ import (
 	"log"
 	"math/rand/v2"
 	"os"
+	"runtime/pprof"
 	"strconv"
 )
 
 type Color struct {
-	Red   int
-	Green int
-	Blue  int
-}
-
-func WriteLine(file *os.File, line ...any) {
-	if _, err := file.WriteString(fmt.Sprintln(line...)); err != nil { // we will always go the next line, no other choice
-		log.Fatal(err)
-	}
+	Red   byte
+	Green byte
+	Blue  byte
 }
 
 func createRandomColor() Color {
-	return Color{rand.IntN(256), rand.IntN(256), rand.IntN(256)}
+	return Color{
+		byte(rand.IntN(256)),
+		byte(rand.IntN(256)),
+		byte(rand.IntN(256)),
+	}
 }
 
 func MakeRandomImage() {
-	args := os.Args
-	var SCALE int32 = 10
-	if len(args) > 1 {
-		scale, err := strconv.Atoi(args[1])
-		if err != nil {
-			log.Fatal(err)
-		}
-		SCALE = int32(scale)
-	}
-	var WIDTH int32 = 10 * SCALE
-	var HEIGHT int32 = 10 * SCALE
-	var FILE_NAME string = "image.ppm"
-	var FORMAT string = "P3"
-	var MAX_COLOR_VALUE string = "255"
-
-	// truncating if the file exists
-	_, er := os.Stat(FILE_NAME)
-	if er == nil {
-		err := os.Truncate(FILE_NAME, 0)
-		if err != nil {
-			log.Fatalf("Failed to clear file: %v", err)
-		}
-	}
-	file, err := os.OpenFile(FILE_NAME, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	profile, err := os.Create("cpu.prof")
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer file.Close() // Ensure the file is closed when the function finishes
+	defer profile.Close()
 
-	// Append your text to the file
-	WriteLine(file, FORMAT)
-	WriteLine(file, WIDTH, HEIGHT)
-	WriteLine(file, MAX_COLOR_VALUE)
-	// so far we have basically added the details, now we just need to add the values
-	// we can basically loop now and add pixels easily one after another
-	for range WIDTH {
-		valuesToPush := []int{}
-		for range HEIGHT {
-			color := createRandomColor()
-			// so whar we will be doing here is, we will first save the entire line to write in memory and then dump it in the file to minimse IO operations.
-			valuesToPush = append(valuesToPush, []int{color.Red, color.Green, color.Blue}...)
+	if err := pprof.StartCPUProfile(profile); err != nil {
+		log.Fatal(err)
+	}
+	defer pprof.StopCPUProfile()
+	args := os.Args
+
+	var scale int32 = 10
+
+	if len(args) > 1 {
+		value, err := strconv.Atoi(args[1])
+		if err != nil {
+			log.Fatal(err)
 		}
-		WriteLine(file, valuesToPush) // appending at once
+		scale = int32(value)
+	}
+
+	width := int(10 * scale)
+	height := int(10 * scale)
+
+	fileName := "image.ppm"
+
+	file, err := os.OpenFile(
+		fileName,
+		os.O_CREATE|os.O_WRONLY|os.O_TRUNC,
+		0644,
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer file.Close()
+
+	// P6 header
+	header := fmt.Sprintf("P6\n%d %d\n255\n", width, height)
+
+	if _, err := file.WriteString(header); err != nil {
+		log.Fatal(err)
+	}
+
+	// Pixel data
+	buffer := make([]byte, 0, width*3)
+
+	for range height {
+		buffer = buffer[:0]
+
+		for range width {
+			color := createRandomColor()
+
+			buffer = append(
+				buffer,
+				color.Red,
+				color.Green,
+				color.Blue,
+			)
+		}
+
+		if _, err := file.Write(buffer); err != nil {
+			log.Fatal(err)
+		}
 	}
 }
