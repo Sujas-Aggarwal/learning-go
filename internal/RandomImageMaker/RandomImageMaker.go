@@ -1,9 +1,13 @@
 package randomimagemaker
 
+/*
+#include <stdlib.h>
+*/
+import "C"
+
 import (
 	"fmt"
 	"log"
-	"math/rand/v2"
 	"os"
 	"sync"
 )
@@ -14,11 +18,19 @@ type Color struct {
 	Blue  byte
 }
 
+// func createRandomColor() Color {
+// 	return Color{
+// 		byte(rand.IntN(256)),
+// 		byte(rand.IntN(256)),
+// 		byte(rand.IntN(256)),
+// 	}
+// }
+
 func createRandomColor() Color {
 	return Color{
-		byte(rand.IntN(256)),
-		byte(rand.IntN(256)),
-		byte(rand.IntN(256)),
+		Red:   byte(int(C.rand()) % 256),
+		Green: byte(int(C.rand()) % 256),
+		Blue:  byte(int(C.rand()) % 256),
 	}
 }
 
